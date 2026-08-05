@@ -43,6 +43,9 @@ var CB_KEEP = ['aseed_vol','avgsteam','bhr','bm_brix','bm_op','bm_vol','bmol1_xt
 'power','prepidx','puritydrop','recov','sjm','stopme','stopprod','sum','trash','vhp_colour','vhp_moist',
 'vhp_pol','vhpm_brix','vhpm_op','vhpm_strike','vhpm_vol','vhpmol1_pdrop','vhpmol1_xtal','vhpmol2_pdrop',
 'vhpmol2_prise',
+/* สถานีปั่นแยก — ตามไฮไลท์ในไฟล์ Centrifugal.xlsx */
+'pct96','fm','fm_brix','vhp','bmol2_prise','cmol3_brix','cmol3_purity',
+'bmagma_brix','bmagma_purity','bsugar_colour','csugar_colour',
 /* เคมีน้ำจากรายงานน้ำ (บล็อก water) */
 'ws_ph_fw1','ws_tds_fw1','ws_ph_bw1','ws_tds_bw1',
 /* ฟิลด์ระบบ */

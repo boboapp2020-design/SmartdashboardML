@@ -200,6 +200,28 @@ h3{font-size:14.5px;font-weight:800;display:flex;align-items:baseline;gap:7px;fl
 h3 small{color:#6f86ad;font-weight:500;font-size:11.5px;letter-spacing:0}
 .trendhd{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
 /* ═══ ตารางข้อมูลหลังกราฟแนวโน้ม ═══ */
+/* ═══ หน้าปั่นแยก — การ์ดงานแยกผลึกรายรอบปั่น ═══ */
+.fggrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(268px,1fr));gap:11px;margin-top:10px}
+.fgline{border:1px solid var(--line);border-radius:15px;overflow:hidden;background:linear-gradient(180deg,#fff,#fcfdff);
+  box-shadow:var(--shadow-sm);transition:box-shadow .2s,transform .2s}
+.fgline:hover{box-shadow:var(--shadow);transform:translateY(-2px)}
+.fgh{display:flex;align-items:center;justify-content:space-between;gap:9px;padding:10px 14px;color:#fff}
+.fgh b{font-size:14px;font-weight:800;display:block;letter-spacing:-.2px}
+.fgh small{font-size:10px;opacity:.9;font-weight:500}
+.fgbadge{flex:none;font-size:9.5px;font-weight:800;border-radius:20px;padding:3px 10px;
+  background:rgba(255,255,255,.24);border:1px solid rgba(255,255,255,.4)}
+.fgbody{padding:4px 12px 11px}
+.fgc{display:flex;align-items:baseline;gap:9px;padding:8px 2px;border-bottom:1px solid var(--line);cursor:pointer;transition:background .12s}
+.fgc:last-child{border-bottom:none}
+.fgc:hover{background:#f4f8ff}
+.fgc small{flex:1;min-width:0;font-size:10.5px;color:var(--ink2);font-weight:600;line-height:1.4}
+.fgc b{font-size:19px;font-weight:800;letter-spacing:-.5px;line-height:1;flex:none}
+.fgc b i{font-style:normal;font-size:10px;font-weight:700;margin-left:2px;opacity:.8}
+.fgc b.na{color:#c2cddf;font-size:15px}
+.fgc em{flex:none;font-style:normal;font-size:9.5px;font-weight:800;opacity:.85;min-width:60px;text-align:right}
+:root[data-theme="dark"] .fgline{background:linear-gradient(180deg,#171f33,#141b2c)}
+:root[data-theme="dark"] .fgc:hover{background:#182238}
+
 .ttblwrap{overflow-x:auto;margin-top:9px;border:1px solid var(--line);border-radius:13px}
 .ttbl{width:100%;border-collapse:collapse;font-size:12.5px;min-width:620px}
 .ttbl th{font-size:10px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);
@@ -1157,13 +1179,46 @@ const D = {
   {id:'P_VC_RHIN',l:'อุณหภูมิ C-Molasses ก่อนเข้า C-Reheater',en:'C-Reheater Inlet Temp',u:'°C',dir:'lo',v:null,tg:42,cr:50,min:20,max:80,dec:1,f:'ทุก 1 ชม',hist:[],src:'ควรใกล้เคียงอุณหภูมิออกจากรางกวน (~40 °C) · ที่มา: DCS',input:1},
   {id:'P_VC_RHOUT',l:'อุณหภูมิ C-Molasses ออกจาก C-Reheater',en:'C-Reheater Outlet Temp',u:'°C',dir:'band',band:[48,55],wband:[45,58],v:null,min:30,max:85,dec:1,f:'ทุก 1 ชม',hist:[],src:'อุ่นให้ไหลตัวก่อนปั่น แต่ห้ามสูงจนผลึกละลาย (Rein Ch.17) · ที่มา: DCS',input:1}]},
 
- /* สถานีปั่นแยก: ออกแบบใหม่จาก Daily Report + เว็บ ML Dashboard
-    หัวใจของสถานี = "ด่านสุดท้ายก่อนน้ำตาลออกจากโรงงาน" คุม 3 เรื่อง:
-      ① โมลาสสุดท้าย (exhaustion — เงินไหลทิ้งตรงนี้)  ② คุณภาพน้ำตาลที่ขาย (pol/สี/ความชื้น)
-      ③ น้ำตาล B/C ที่วนกลับไปเป็นเชื้อ (ปั่นไม่สะอาด = ภาระวนกลับหม้อเคี่ยว)
-    🔗 ดึงสด 12 ตัว · ✍️ กรอกมือ 3 ตัว (คุณภาพน้ำตาลขาว DCR1 — ชีตไม่มี) */
+ /* สถานีปั่นแยก: ออกแบบตามบล็อก BOILING HOUSE ที่ไฮไลท์ในไฟล์ Centrifugal.xlsx
+    (คอลัมน์ T/U/V/W = Today/Week/Period/To-date ตำแหน่งเดียวกับ Daily Report) ดึงจากเว็บ ML Dashboard
+
+    เรียงตาม "งานจริง" ของหม้อปั่น — แมสคิวท์เข้า → เหวี่ยงแยก → น้ำตาล + โมลาสออก:
+      ① งานแยกผลึก (Purity Drop / Crystal Content / Purity Rise) ← หัวใจ วัดว่าเครื่องทำงานดีแค่ไหน
+      ② กำลังการปั่น (Strike / Cycle / Operation time)
+      ③ คุณภาพน้ำตาลที่ขาย + น้ำตาล B/C ที่วนกลับเป็นเชื้อ
+      ④ โมลาสสุดท้าย — ปลายทางที่เงินไหลออก
+    🔗 ดึงสด 25 ตัว · ✍️ กรอกมือ 3 ตัว (คุณภาพน้ำตาลขาว DCR1 — ชีตไม่มี) */
  fugal:{icon:STICON.fugal,name:'4. ปั่นแยก',en:'Centrifugal',owner:'หัวหน้าแผนกปั่นแยก',trend:'F_FMP',kpis:[
-  /* ── ① โมลาสสุดท้าย — ตัวเงินของทั้งโรงงาน ── */
+  /* ── ① งานแยกผลึก: Purity Drop = purity แมสคิวท์ − purity โมลาส (ยิ่งมากยิ่งแยกสะอาด) ── */
+  {id:'F_PD_D1',l:'Purity Drop — DCR ปั่นที่ 1',en:'DCR Mol#1 Purity Drop',u:'จุด',dir:'hi',v:null,tg:20,cr:16,min:0,max:40,dec:2,f:'ทุก Strike',hist:[],days:[],
+   src:'🔗 ดึงสด: dcrmol1_pdrop · เป้าจากชีต >20 · ตัวชี้ตรงว่าเครื่องปั่นแยกผลึกออกจากน้ำเหลืองได้ดีแค่ไหน',lf:{v:'dcrmol1_pdrop_today',td:'dcrmol1_pdrop_todate',tgRaw:'dcrmol1_pdrop_target'}},
+  {id:'F_PD_D2',l:'Purity Drop — DCR ปั่นที่ 2',en:'DCR Mol#2 Purity Drop',u:'จุด',dir:'hi',v:null,tg:20,cr:16,min:0,max:40,dec:2,f:'ทุก Strike',hist:[],days:[],
+   src:'🔗 ดึงสด: dcrmol2_pdrop · เป้าจากชีต >20 · การปั่นรอบสองต้องดึง purity ลงได้อีก ไม่งั้นน้ำตาลติดไปกับโมลาส',lf:{v:'dcrmol2_pdrop_today',td:'dcrmol2_pdrop_todate',tgRaw:'dcrmol2_pdrop_target'}},
+  {id:'F_PD_V1',l:'Purity Drop — VHP ปั่นที่ 1',en:'VHP Mol#1 Purity Drop',u:'จุด',dir:'hi',v:null,tg:21,cr:17,min:0,max:40,dec:2,f:'ทุก Strike',hist:[],days:[],
+   src:'🔗 ดึงสด: vhpmol1_pdrop · เป้าจากชีต >21 · สาย VHP คุมเข้มกว่า DCR เพราะเป็นน้ำตาลส่งออก',lf:{v:'vhpmol1_pdrop_today',td:'vhpmol1_pdrop_todate',tgRaw:'vhpmol1_pdrop_target'}},
+  {id:'F_PD_V2',l:'Purity Drop — VHP ปั่นที่ 2',en:'VHP Mol#2 Purity Drop',u:'จุด',dir:'hi',v:null,tg:21,cr:17,min:0,max:40,dec:2,f:'ทุก Strike',hist:[],days:[],
+   src:'🔗 ดึงสด: vhpmol2_pdrop · เป้าจากชีต >21',lf:{v:'vhpmol2_pdrop_today',td:'vhpmol2_pdrop_todate',tgRaw:'vhpmol2_pdrop_target'}},
+  {id:'F_XT_D1',l:'Crystal Content — DCR ปั่นที่ 1',en:'DCR Mol#1 Crystal Content',u:'%',dir:'hi',v:null,tg:50,cr:44,min:20,max:75,dec:2,f:'ทุก Strike',hist:[],days:[],
+   src:'🔗 ดึงสด: dcrmol1_xtal · เป้าจากชีต >50 · ผลึกที่ปั่นได้จริงต่อแมสคิวท์ — ต่ำ = ผลึกยังละลายค้างในน้ำเหลือง',lf:{v:'dcrmol1_xtal_today',td:'dcrmol1_xtal_todate',tgRaw:'dcrmol1_xtal_target'}},
+  {id:'F_XT_D2',l:'Crystal Content — DCR ปั่นที่ 2',en:'DCR Mol#2 Crystal Content',u:'%',dir:'hi',v:null,tg:50,cr:44,min:20,max:75,dec:2,f:'ทุก Strike',hist:[],days:[],
+   src:'🔗 ดึงสด: dcrmol2_xtal · เป้าจากชีต >50',lf:{v:'dcrmol2_xtal_today',td:'dcrmol2_xtal_todate',tgRaw:'dcrmol2_xtal_target'}},
+  {id:'F_XT_V1',l:'Crystal Content — VHP ปั่นที่ 1',en:'VHP Mol#1 Crystal Content',u:'%',dir:'hi',v:null,tg:50,cr:44,min:20,max:75,dec:2,f:'ทุก Strike',hist:[],days:[],
+   src:'🔗 ดึงสด: vhpmol1_xtal · เป้าจากชีต >50',lf:{v:'vhpmol1_xtal_today',td:'vhpmol1_xtal_todate',tgRaw:'vhpmol1_xtal_target'}},
+  {id:'F_PR_D2',l:'Purity Rise — DCR ปั่นที่ 2',en:'DCR Mol#2 Purity Rise',u:'จุด',dir:'lo',v:null,tg:1.5,cr:3,min:-5,max:8,dec:2,f:'ทุก Strike',hist:[],days:[],
+   src:'🔗 ดึงสด: dcrmol2_prise · เป้าจากชีต <1.5 · purity โมลาสที่ "เด้งขึ้น" = ล้างน้ำมากเกินจนละลายผลึกกลับ',lf:{v:'dcrmol2_prise_today',td:'dcrmol2_prise_todate',tgRaw:'dcrmol2_prise_target'}},
+  {id:'F_PR_V2',l:'Purity Rise — VHP ปั่นที่ 2',en:'VHP Mol#2 Purity Rise',u:'จุด',dir:'lo',v:null,tg:1.5,cr:3,min:-5,max:8,dec:2,f:'ทุก Strike',hist:[],days:[],
+   src:'🔗 ดึงสด: vhpmol2_prise · เป้าจากชีต <1.5',lf:{v:'vhpmol2_prise_today',td:'vhpmol2_prise_todate',tgRaw:'vhpmol2_prise_target'}},
+  /* ── ② กำลังการปั่น — จำนวนหม้อ/รอบเวลา บอกว่าคอขวดอยู่ที่ปั่นหรือที่เคี่ยว ── */
+  {id:'F_STK_D',l:'จำนวน Strike — DCR',en:'DCR No. of Strike',u:'ครั้ง',dir:'hi',v:null,tg:0,cr:-1,min:0,max:80,dec:0,f:'ทุก 24 ชม',hist:[],days:[],track:1,
+   src:'🔗 ดึงสด: dcrm_strike · ตัวติดตามภาระงาน — ดูคู่กับ cycle time ว่าปั่นทันเคี่ยวไหม',lf:{v:'dcrm_strike_today',td:'dcrm_strike_todate'}},
+  {id:'F_CYC_D',l:'Cycle Time — DCR',en:'DCR Cycle Time',u:'ชม.',dir:'lo',v:null,tg:4.5,cr:6,min:0,max:12,dec:2,f:'ทุก 24 ชม',hist:[],days:[],
+   src:'🔗 ดึงสด: dcrm_cycle · ชีตไม่มีเป้า — รวมเวลารอด้วย · ถ้าห่างจาก operation time มาก แปลว่าเสียเวลารอ ไม่ใช่ปั่นจริง',lf:{v:'dcrm_cycle_today',td:'dcrm_cycle_todate'}},
+  {id:'F_OP_D',l:'Operation Time — DCR',en:'DCR Operation Time',u:'ชม.',dir:'hi',v:null,tg:0,cr:-1,min:0,max:12,dec:2,f:'ทุก 24 ชม',hist:[],days:[],track:1,
+   src:'🔗 ดึงสด: dcrm_op · เวลาปั่นจริง (ไม่รวมรอ) — ใช้เทียบกับ cycle time หาเวลาสูญเปล่า',lf:{v:'dcrm_op_today',td:'dcrm_op_todate'}},
+  {id:'F_STK_V',l:'จำนวน Strike — VHP',en:'VHP No. of Strike',u:'ครั้ง',dir:'hi',v:null,tg:0,cr:-1,min:0,max:80,dec:0,f:'ทุก 24 ชม',hist:[],days:[],track:1,
+   src:'🔗 ดึงสด: vhpm_strike · ตัวติดตามภาระงานสาย VHP',lf:{v:'vhpm_strike_today',td:'vhpm_strike_todate'}},
+  /* ── ③ คุณภาพน้ำตาล + เชื้อที่วนกลับ ── */
+  /* ── ④ โมลาสสุดท้าย — ตัวเงินของทั้งโรงงาน ── */
   {id:'F_FMP',l:'Final Molasses Purity (%)',en:'ความบริสุทธิ์โมลาสสุดท้าย',u:'%',dir:'lo',v:null,tg:33.1,cr:36.0,min:28,max:42,dec:2,f:'ทุก 24 ชม',hist:[],days:[],
    src:'🔗 ดึงสด: fm_purity · เป้าจากชีต <33.10 · ตัวชี้ exhaustion ที่แพงที่สุดในโรงงาน — ลด 1 จุด ≈ recovery +0.1–0.15%',lf:{v:'fm_purity_today',td:'fm_purity_todate',tgRaw:'fm_purity_target'}},
   {id:'F_TSAI',l:'Final Molasses TSAI (%)',en:'น้ำตาลรวมในโมลาส',u:'%',dir:'hi',v:null,tg:50,cr:45,min:40,max:70,dec:1,f:'ทุก 24 ชม',hist:[],days:[],
@@ -1629,7 +1684,7 @@ const KEYP={
   milling:['M_BPOL','M_EXT','M_1ME','M_PI','M_IMBF','M_BMOI','M_PDROP'],
   boil   :['B_FCP','B_TURB','B_PRISE','B_FCC','B_RSBX','B_PHL'],
   pan    :['P_C_BX','P_C_CC','P_VC_TOUT','P_A_SM'],
-  fugal  :['F_FMP','F_TSAI','F_FMPC','F_MTMP','F_VCOL','F_VPOL','F_VMOI'],
+  fugal  :['F_FMP','F_PD_D1','F_PD_D2','F_XT_D1','F_PR_D2','F_TSAI','F_FMPC','F_VCOL','F_VPOL','F_VMOI'],
   boiler :['B_STC','B_KWHTC','B_SBAG','B_CE1','B_CE2','W_SUM','B_BW1TDS','B_BW1PH','B_FWPH']
 };
 /* วิเคราะห์สถานี: ไล่เฉพาะตัวชี้วัดหลัก ถ้าหลุดค่าควบคุมจึงตั้งเป็นประเด็น
@@ -1779,6 +1834,9 @@ const KPI_ICON={CANE:'cube',CCSF:'leaf',BURNT:'flame',TELQ:'pct',EDL:'bolt',
  P_B_PCT:'pct',P_B_SM:'gauge',P_B_BX:'flask',P_B_CC:'cube',P_B_OT:'gauge',
  P_C_PCT:'pct',P_C_SM:'gauge',P_C_BX:'flask',P_C_CC:'cube',P_C_OT:'gauge',
  P_VC_PIN:'flask',P_VC_POUT:'flask',P_VC_TIN:'temp',P_VC_TOUT:'temp',P_VC_RHIN:'temp',P_VC_RHOUT:'temp',
+ F_PD_D1:'gauge',F_PD_D2:'gauge',F_PD_V1:'gauge',F_PD_V2:'gauge',
+ F_XT_D1:'cube',F_XT_D2:'cube',F_XT_V1:'cube',F_PR_D2:'drop',F_PR_V2:'drop',
+ F_STK_D:'fugal',F_CYC_D:'gauge',F_OP_D:'gauge',F_STK_V:'fugal',
  F_FMP:'flask',F_TSAI:'flask',F_FMPC:'pct',F_MTMP:'temp',F_RS:'flask',F_ASH:'flame',F_PHM:'drop',
  F_BPOL:'cube',F_CPOL:'cube',F_DPOL:'cube',F_DCOL:'cube',F_DMOI:'drop',F_VCOL:'cube',F_VPOL:'cube',F_VMOI:'drop',
  B_STC:'steam',B_KWHTC:'bolt',B_KWHSG:'bolt',B_SBAG:'flame',B_BAGKW:'flame',
@@ -2982,6 +3040,43 @@ function millCascade(){
     <div class="sub">ไล่เส้นทางน้ำตาลจากอ้อยถึงชานอ้อย · จุดที่เป็นสีแดง/ส้มคือจุดที่น้ำตาลกำลังรั่ว · <b style="color:var(--blue)">กดการ์ดเพื่อดูแนวโน้ม</b></div>
     <div class="cryo">${nodes}</div>${note}${ctx}</div>`;
 }
+/* ═════════════ หน้าปั่นแยก — เลย์เอาต์เฉพาะ ═════════════
+   หัวใจของหม้อปั่นคือ "เหวี่ยงแยกผลึกออกจากน้ำเหลือง" วัดผลด้วย 3 ตัวคู่กันเสมอ:
+     Purity Drop (แยกได้กี่จุด) · Crystal Content (ผลึกที่ได้) · Purity Rise (ล้างเกินจนละลายกลับ)
+   จึงทำเป็นการ์ดรายเครื่อง/รายรอบปั่น แล้วปิดท้ายด้วยปลายทาง = โมลาสสุดท้าย */
+const FUGAL_LINES=[
+ {t:'DCR — ปั่นที่ 1',en:'Direct Consumption Raw · 1st',g:'linear-gradient(135deg,#0369c9,#7cc3fb)',
+  pd:'F_PD_D1',xt:'F_XT_D1',pr:null},
+ {t:'DCR — ปั่นที่ 2',en:'Direct Consumption Raw · 2nd',g:'linear-gradient(135deg,#059669,#5eead4)',
+  pd:'F_PD_D2',xt:'F_XT_D2',pr:'F_PR_D2'},
+ {t:'VHP — ปั่นที่ 1',en:'Very High Pol · 1st',g:'linear-gradient(135deg,#7c3aed,#c4b5fd)',
+  pd:'F_PD_V1',xt:'F_XT_V1',pr:null},
+ {t:'VHP — ปั่นที่ 2',en:'Very High Pol · 2nd',g:'linear-gradient(135deg,#c026d3,#f0abfc)',
+  pd:'F_PD_V2',xt:null,pr:'F_PR_V2'}
+];
+function fugalLineCards(){
+  const cell=(id,lb)=>{
+    if(!id)return `<div class="fgc"><small>${lb}</small><b class="na">—</b></div>`;
+    const k=findKpi(id),st=statusOf(k),c=TONE[st]||'#94a3c4';
+    return `<div class="fgc" onclick="selectTrend('fugal','${id}')" title="กดดูแนวโน้ม · เป้า ${tgtText(k).replace('เป้าหมาย ','')}">
+      <small>${lb}</small><b style="color:${c}">${k.v==null?'–':fmtN(k.v,k.dec)}<i>${k.u||''}</i></b>
+      <em style="color:${c}">${tgtText(k).replace('เป้าหมาย ','')}</em></div>`;};
+  const cards=FUGAL_LINES.map(L=>{
+    const ids=[L.pd,L.xt,L.pr].filter(Boolean);
+    const worst=ids.map(id=>statusOf(findKpi(id)));
+    const bad=worst.includes('crit')?'crit':worst.includes('warn')?'warn':'ok';
+    return `<div class="fgline">
+      <div class="fgh" style="background:${L.g}">
+        <div><b>${L.t}</b><small>${L.en}</small></div>
+        <span class="fgbadge ${bad}">${bad==='crit'?'วิกฤต':bad==='warn'?'เฝ้าระวัง':'ปกติ'}</span>
+      </div>
+      <div class="fgbody">${cell(L.pd,'Purity Drop — แยกได้กี่จุด')}${cell(L.xt,'Crystal Content — ผลึกที่ได้')}${cell(L.pr,'Purity Rise — ล้างเกินไหม')}</div>
+    </div>`;}).join('');
+  return `<div class="card"><h3>งานแยกผลึกรายรอบปั่น <small>Separation Performance · DCR &amp; VHP</small></h3>
+    <div class="sub">3 ตัวนี้ต้องอ่านคู่กันเสมอ — <b>Purity Drop</b> บอกว่าแยกได้กี่จุด · <b>Crystal Content</b> บอกว่าได้ผลึกจริงเท่าไร ·
+      <b>Purity Rise</b> เตือนว่าล้างน้ำมากไปจนผลึกละลายกลับ</div>
+    <div class="fggrid">${cards}</div></div>`;
+}
 function renderDash(key){
   const s=D[key], tsel=trendKpi(key).id;
   if(key==='pan'){
@@ -2992,6 +3087,11 @@ function renderDash(key){
     document.getElementById('krow').className='';
     document.getElementById('krow').innerHTML=boilGroupCards();
     document.getElementById('row2').innerHTML=evapTrain()+trendCard('boil');
+  }else if(key==='fugal'){
+    document.getElementById('krow').className='krow';
+    document.getElementById('krow').innerHTML=['F_FMP','F_PD_D1','F_XT_D1','F_TSAI','F_VCOL']
+      .map((id,i)=>kpiCard(findKpi(id),i,'fugal',tsel)).join('');
+    document.getElementById('row2').innerHTML=fugalLineCards()+trendCard('fugal');
   }else if(key==='milling'){
     document.getElementById('krow').className='krow';
     document.getElementById('krow').innerHTML=MILL_HERO.map((id,i)=>kpiCard(findKpi(id),i,'milling',tsel)).join('');

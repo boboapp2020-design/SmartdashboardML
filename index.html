@@ -1677,6 +1677,20 @@ function statusOf(k){
   if(k.dir==='hi'){if(v>=k.tg)return 'ok'; if(v<k.cr)return 'crit'; return 'warn';}
   if(v<=k.tg)return 'ok'; if(v>k.cr)return 'crit'; return 'warn';
 }
+/* ═══ สะพานเชื่อม RCA ↔ การ์ดบนแดชบอร์ด ═══
+   กฎวิเคราะห์ทุกข้อต้องตัดสินด้วย "สถานะเดียวกับที่การ์ดแสดง" ไม่ใช่ตัวเลขที่ hardcode ไว้
+   ไม่งั้นเกิดอาการ: การ์ดขึ้นเขียวว่าผ่าน แต่ RCA บอกว่ามีปัญหา (หรือกลับกัน)
+   และเวลาเป้าเปลี่ยน (จากชีต/จากไฟล์ QC) กฎจะขยับตามเองอัตโนมัติ */
+const kSt =id=>{const k=findKpi(id);return k?statusOf(k):'nodata';};
+const kBad=id=>{const s=kSt(id);return s==='crit'||s==='warn';};
+const kV  =id=>{const k=findKpi(id); if(!k)return null;
+                const v=(k.lf&&k.todate!=null)?k.todate:k.v; return (v!=null&&!isNaN(v))?v:null;};
+const kNm =id=>{const k=findKpi(id);return k?k.l:id;};
+const kU  =id=>{const k=findKpi(id);return k&&k.u?' '+k.u:'';};
+const kDec=id=>{const k=findKpi(id);return k?k.dec:2;};
+const kTgT=id=>{const k=findKpi(id);return k?tgtText(k).replace('เป้าหมาย ',''):'—';};
+/* บรรทัดค่า+เป้ามาตรฐาน — ใช้ทุกกฎ จะได้ตรงกับการ์ดเป๊ะ */
+const kLine=id=>{const v=kV(id);return `${v==null?'–':fmtN(v,kDec(id))}${kU(id)} (เป้า ${kTgT(id)})`;};
 const TONE={ok:'#12a86b',warn:'#ef8f21',crit:'#e8443c',nodata:'#9aa8c2'};
 const worst=a=>a.includes('crit')?'crit':a.includes('warn')?'warn':a.every(x=>x==='nodata')?'nodata':'ok';
 const stationStatus=s=>worst(s.kpis.map(statusOf));
@@ -2281,7 +2295,8 @@ function alertsCard(key){
    หัวใจ: หม้อเคี่ยวคือการบีบน้ำตาลออกจาก mother liquor ที่ purity ต่ำลงเรื่อย ๆ (A→B→C)
    ตัวที่กำหนดว่าน้ำตาลจะไหลทิ้งทางโมลาสมากแค่ไหน = การตกผลึกของ C และการเย็นตัวในราง */
 function panAnalyze(){
-  const V=id=>{const k=findKpi(id); if(!k)return null; const v=(k.lf&&k.todate!=null)?k.todate:k.v; return (v!=null&&!isNaN(v))?v:null;};
+  /* ทุกกฎตัดสินด้วย kBad()/kSt() = สถานะเดียวกับการ์ด · เป้าอ้าง kTgT() = เป้าเดียวกับการ์ด */
+  const V=kV;
   const P=[];
   const bxA=V('P_A_BX'),bxB=V('P_B_BX'),bxC=V('P_C_BX');
   const ccA=V('P_A_CC'),ccB=V('P_B_CC'),ccC=V('P_C_CC');
@@ -2289,13 +2304,13 @@ function panAnalyze(){
   const otC=V('P_C_OT');
   const tin=V('P_VC_TIN'),tout=V('P_VC_TOUT');
   const pin=V('P_VC_PIN'),pout=V('P_VC_POUT');
-  const TG_BX={A:93,B:95,C:97.5};
 
-  /* 1) Brix C ต่ำ = ต้นตอที่ทำเงินหายมากที่สุด */
-  if(bxC!=null&&bxC<TG_BX.C){
-    const gap=(TG_BX.C-bxC).toFixed(1);
-    P.push({sev:bxC<TG_BX.C-2?'crit':'warn',t:'C-Massecuite Brix ต่ำกว่าเป้า — จุดที่ทำเงินหายมากสุด',
-      v:`C-Brix ${fmtN(bxC,1)} °Bx (เป้า ≥ ${TG_BX.C}) · ต่ำกว่า ${gap} จุด`,
+  /* 1) Brix C หลุดเป้า = ต้นตอที่ทำเงินหายมากที่สุด */
+  if(kBad('P_C_BX')){
+    const tgC=findKpi('P_C_BX').tg;
+    const gap=(bxC!=null&&tgC!=null)?Math.abs(tgC-bxC).toFixed(1):null;
+    P.push({sev:kSt('P_C_BX'),t:'C-Massecuite Brix หลุดเป้า — จุดที่ทำเงินหายมากสุด',
+      v:`${kLine('P_C_BX')}${gap?` · ห่างเป้า ${gap} จุด`:''}`,
       root:[`อาการ: แมสคิวท์ C เหลวกว่าที่ควร ${gap} จุด Brix`,
         `Brix ต่ำ → supersaturation ไม่พอ → ผลึกโตช้า/หยุดโต ทั้งในหม้อและในรางกวน`,
         `ปลายทาง: sucrose ค้างใน mother liquor ตอนปั่น → FM Purity เกินเป้า (สังเกตว่ามักเกิดคู่กัน)`,
@@ -2317,10 +2332,10 @@ function panAnalyze(){
       next:[`บันทึกเหตุการณ์ "ลดไอ pan" ในกะ คู่กับ Brix ที่ได้ — พิสูจน์ความเชื่อมโยง`]});
   }
   /* 3) Seed/Mass เกินออกแบบ = ใส่เชื้อมากเกิน */
-  [['A',smA],['B',smB],['C',smC]].forEach(([x,v])=>{
-    if(v!=null&&v>41){
-      P.push({sev:v>44?'crit':'warn',t:`Seed/Mass หม้อ ${x} สูงเกินออกแบบ — ใส่เชื้อมากไป`,
-        v:`${fmtN(v,1)}% (ออกแบบ ~38%)`,
+  [['A',smA,'P_A_SM'],['B',smB,'P_B_SM'],['C',smC,'P_C_SM']].forEach(([x,v,id])=>{
+    if(kBad(id)&&v!=null){
+      P.push({sev:kSt(id),t:`Seed/Mass หม้อ ${x} หลุดช่วงควบคุม — สัดส่วนเชื้อผิด`,
+        v:kLine(id),
         root:[`อาการ: สัดส่วนเชื้อสูงกว่าออกแบบ (38%)`,
           `เชื้อมาก = จุดตกผลึกเยอะแต่เม็ดเล็ก → CV แย่ → หนี fine grain ด้วยการปั่นล้างมากขึ้น → purity โมลาสยิ่งสูง`,
           `แถมจำนวน strike และ recirculation เพิ่ม → เปลืองทั้งไอและเวลาเครื่อง (Rein Ch.15)`,
@@ -2330,9 +2345,9 @@ function panAnalyze(){
     }
   });
   /* 4) Crystal Content ต่ำ — ถ้าต่ำหลายหม้อ รวมเป็นประเด็นเดียว (ต้นตอเดียวกัน) */
-  const ccLow=[['A',ccA,55],['B',ccB,45],['C',ccC,35]].filter(([x,v,tg])=>v!=null&&v<tg);
+  const ccLow=[['A',ccA,'P_A_CC'],['B',ccB,'P_B_CC'],['C',ccC,'P_C_CC']].filter(([x,v,id])=>kBad(id)&&v!=null);
   if(ccLow.length>=2){
-    P.push({sev:ccLow.some(([x,v,tg])=>v<tg*0.9)?'crit':'warn',t:'Crystal Content ต่ำหลายหม้อพร้อมกัน',
+    P.push({sev:ccLow.some(([x,v,id])=>kSt(id)==='crit')?'crit':'warn',t:'Crystal Content ต่ำหลายหม้อพร้อมกัน',
       v:ccLow.map(([x,v,tg])=>`${x} ${fmtN(v,1)}%`).join(' · ')+' (ต่ำกว่าเป้าทุกตัว)',
       root:[`อาการ: crystal content ต่ำกว่าเป้าพร้อมกันหลายหม้อ`,
         `ต่ำพร้อมกันหลายหม้อ = ต้นตอร่วมของระบบ ไม่ใช่ฝีมือคนคุมหม้อใดหม้อหนึ่ง`,
@@ -2341,9 +2356,9 @@ function panAnalyze(){
       fix:[`แก้ Brix/ไอตามประเด็น Brix ก่อน แล้ววัด CC ซ้ำ — อย่าเพิ่งไปยุ่งกับสูตรเชื้อ`,
         `ถ้า Brix ปกติแต่ CC ยังต่ำ → ตรวจคุณภาพ slurry (ขนาด/ปริมาณ) และจังหวะรับเชื้อ`],
       next:[`คำนวณ CC จาก purity (สูตร Rein: CC=(Pty_MA−Pty_Mol)/(100−Pty_Mol)×Brix) เทียบกับค่าแล็บ — ถ้าไม่ตรงกัน สงสัยการวัดก่อน`]});
-  }else ccLow.forEach(([x,v,tg])=>{
-    P.push({sev:v<tg*0.9?'crit':'warn',t:`Crystal Content หม้อ ${x} ต่ำกว่าเป้า`,
-      v:`${fmtN(v,1)}% (เป้า ≥ ${tg})`,
+  }else ccLow.forEach(([x,v,id])=>{
+    P.push({sev:kSt(id),t:`Crystal Content หม้อ ${x} ต่ำกว่าเป้า`,
+      v:kLine(id),
       root:[`อาการ: ผลึกในแมสคิวท์หม้อ ${x} น้อยกว่าเป้า`,
         `น้ำตาลที่ควรอยู่ในผลึก ยังละลายค้างในน้ำเหลือง → จะไหลไปกับโมลาสตอนปั่น`,
         `RCA: ดู Brix/supersaturation ของหม้อเดียวกันก่อน แล้วค่อยดูเชื้อ`],
@@ -2362,8 +2377,8 @@ function panAnalyze(){
       fix:[`คำนวณ residence time จริง: ปริมาตรราง ÷ อัตราป้อน — ถ้า <24 ชม. ต้องลดอัตราป้อนหรือใช้รางเพิ่ม`,
         `ตรวจอุณหภูมิ/อัตราน้ำหล่อเย็นเข้า-ออก`,`วัดความหนืดโมลาส ถ้าสูงผิดปกติ ย้อนไป dextran จากอ้อยค้าง`],
       next:[`ติด temp probe ต้น-กลาง-ปลายราง ดู profile จริง — จุดที่กราฟแบนคือจุดที่การเย็นตัวตาย`]});
-    else if(tout>42)P.push({sev:'warn',t:'อุณหภูมิออกจากรางกวนยังสูง',
-      v:`${fmtN(tout,1)} °C (เป้า ≤ 40)`,
+    else if(kBad('P_VC_TOUT'))P.push({sev:kSt('P_VC_TOUT'),t:'อุณหภูมิออกจากรางกวนยังสูง',
+      v:kLine('P_VC_TOUT'),
       root:[`อาการ: ΔT ${fmtN(d,1)} °C ถือว่าดี แต่ปลายทาง ${fmtN(tout,1)} °C ยังไม่ถึง ~40`,
         `ผลึกโตต่อได้จนถึง ~40 °C — องศาท้าย ๆ นี่แหละที่บีบ FM Purity ลงได้อีก`,
         `RCA: เวลาพักเกือบพอแต่ยังขาดปลายทาง — น้ำหล่อเย็นหรือเวลาพักอีกนิดเดียว`],
@@ -2371,9 +2386,9 @@ function panAnalyze(){
       next:[`ลอง 1 สัปดาห์แล้วเทียบ FM Purity ก่อน-หลัง — คาดว่าลงได้ 0.5–1 จุด`]});
   }
   /* 6) เวลาเคี่ยว C สั้นเกินไป */
-  if(otC!=null&&otC<6){
-    P.push({sev:otC<5?'crit':'warn',t:'เวลาเคี่ยวหม้อ C สั้นกว่าที่ควร',
-      v:`${fmtN(otC,1)} ชม. (Rein 6–7 ชม.)`,
+  if(kBad('P_C_OT')&&otC!=null){
+    P.push({sev:kSt('P_C_OT'),t:'เวลาเคี่ยวหม้อ C หลุดเกณฑ์',
+      v:kLine('P_C_OT'),
       root:[`อาการ: เวลาเคี่ยว C ${fmtN(otC,1)} ชม. สั้นกว่าเกณฑ์ 6–7 ชม.`,
         `mother liquor ของ C purity ต่ำมาก ผลึกโตช้าที่สุดในระบบ (18–25 μm/ชม. — Rein Ch.15)`,
         `เร่งจบ strike = ผลึกไม่ทันโต → CC ต่ำ → โยนภาระให้รางกวน ซึ่งชดเชยได้ไม่หมด`,
@@ -2397,6 +2412,7 @@ function panAnalyze(){
         `ทบทวนวิธีสุ่มตัวอย่างเข้า-ออก ให้ representative เท่ากัน (ตำแหน่ง/เวลา/ภาชนะ)`],
       next:[`เทียบ purity โมลาสออกราง กับ FM Purity — ควรใกล้เคียงกัน ถ้าโมลาสออกยังสูงกว่า FM มาก แปลว่ายังเสียน้ำตาลต่อได้อีกช่วงปั่น`]});
   }
+  fillGaps(P,'pan');
   P.sort((a,b)=>(a.sev==='crit'?0:1)-(b.sev==='crit'?0:1));
   /* บทสรุปเชื่อมโยง — ถ้าปัญหาฝั่ง C หลายตัวชนกัน มักมีต้นตอร่วม */
   const cIssues=P.filter(x=>/C-|หม้อ C|รางกวน/.test(x.t)).length;
@@ -2801,16 +2817,36 @@ function evapTrain(){
     <div class="sub">น้ำอ้อยใส ~15 °Bx ต้องออกเป็นน้ำเชื่อม 62–70 °Bx — ลูกไหนเพิ่ม Brix ได้น้อยผิดปกติ = k ตก (ตะกรัน) ที่ลูกนั้น (Rein Ch.11–12)</div>
     <div class="cryo">${nodes}</div>${note}</div>`;
 }
+/* ตาข่ายกันตก: KEY param ที่การ์ดบอกว่าหลุดเป้า แต่ยังไม่มีกฎเจาะลึกเขียนไว้
+   ต้องไม่หายไปจาก RCA — เติมเป็นประเด็นพื้นฐาน (อาการ + กลไกจากโมเดล IMPACT + แนวป้องกัน)
+   นี่คือตัวรับประกันว่า "ทุกอย่างที่การ์ดเตือน จะมีในบทวิเคราะห์เสมอ" */
+function fillGaps(P,stnKey){
+  const covered=(P||[]).map(x=>x.t||'').join(' ');
+  (KEYP[stnKey]||[]).forEach(id=>{
+    if(!kBad(id))return;
+    const nm=kNm(id);
+    if(covered.indexOf(nm)>=0)return;                     // มีกฎเจาะลึกครอบอยู่แล้ว
+    const base=nm.replace(/\s*\(.*?\)\s*/g,'').trim();
+    if(base&&covered.indexOf(base)>=0)return;
+    const M=(typeof IMPACT!=='undefined'&&IMPACT[id])||{};
+    P.push({sev:kSt(id),t:`${nm} หลุดค่าควบคุม`,v:kLine(id),
+      root:[`อาการ: ${nm} อยู่นอกช่วงควบคุม (${kLine(id)})`,
+            M.why||'ยังไม่ได้เขียนกลไกเจาะลึกให้ตัวนี้ — ใช้เกณฑ์ควบคุมของสถานีเป็นหลักก่อน'],
+      fix:M.prev||[`ทวนวิธีวัด/สอบเทียบเครื่องมือก่อน แล้วไล่หาสาเหตุที่หน้างานตามลำดับผลกระทบ`],
+      next:(M.lead&&M.lead.length)?[`เฝ้าตัวชี้นำ: ${M.lead.join(' · ')}`]:[]});
+  });
+}
 /* ─── RCA หม้อต้ม ─── */
 function boilAnalyze(){
-  const V=id=>{const k=findKpi(id); if(!k)return null; const v=(k.lf&&k.todate!=null)?k.todate:k.v; return (v!=null&&!isNaN(v))?v:null;};
+  /* ทุกกฎด้านล่างตัดสินด้วย kBad()/kSt() = สถานะเดียวกับการ์ดบนแดชบอร์ด
+     และแสดงเป้าด้วย kTgT() = เป้าเดียวกับการ์ด — เป้าเปลี่ยนที่เดียว กฎขยับตามเอง */
   const P=[]; const S=evSeries(); const wk=S?evWeak(S.bx):null;
-  const bx=V('B_RSBX'), phs=V('B_RSPH'), fcp=V('B_FCP'), phc=V('B_PHC'), phl=V('B_PHL'),
-        turb=V('B_TURB'), prise=V('B_PRISE');
+  const bx=kV('B_RSBX'), phd=kV('B_PHDROP'), fcp=kV('B_FCP'), phl=kV('B_PHL'),
+        turb=kV('B_TURB'), prise=kV('B_PRISE');
   /* 1) Brix น้ำเชื่อมต่ำ — ต้นทางของ steam%cane และภาระหม้อเคี่ยว */
-  if(bx!=null&&bx<62){
-    P.push({sev:bx<58?'crit':'warn',t:'Brix น้ำเชื่อมออกต่ำกว่าเป้า — ภาระถูกโยนให้หม้อเคี่ยว',
-      v:`${fmtN(bx,1)} °Bx (เป้า 62–70)${wk?` · ลูกอ่อนสุด: Effect ${wk.effect}`:''}`,
+  if(kBad('B_RSBX')){
+    P.push({sev:kSt('B_RSBX'),t:'Brix น้ำเชื่อมออกหลุดเป้า — ภาระถูกโยนให้หม้อเคี่ยว',
+      v:`${kLine('B_RSBX')}${wk?` · ลูกอ่อนสุด: Effect ${wk.effect}`:''}`,
       root:[`อาการ: น้ำเชื่อมออกจากลูกสุดท้ายเหลวกว่าเป้า`,
         `น้ำที่หม้อต้มไม่ระเหย (ไอถูก ใช้ซ้ำได้หลายชั้น) จะไปตกที่หม้อเคี่ยว (ไอแพง ใช้ครั้งเดียว) → steam%cane พุ่ง และ Brix C-Mass ตกตาม`,
         wk?`ข้อมูลรายลูกชี้เป้า: Effect ${wk.effect} เพิ่ม Brix ได้แค่ +${fmtN(wk.delta,1)} (ควร ~+${fmtN(EV_EXPECT[wk.effect-1],1)}) — k ของลูกนี้ตก`:'ยังไม่มีข้อมูลรายลูกชี้จุด',
@@ -2820,56 +2856,58 @@ function boilAnalyze(){
         `ระหว่างรอ CIP: บาลานซ์ feed ให้ลูกอ่อนรับภาระน้อยลง`],
       next:[`บันทึก Brix รายลูกทุกกะเทียบหลัง CIP — k ควรฟื้น 90–100%`,`ดู steam%cane คู่กัน คาดว่าลดตาม 3–5%`]});
   }
-  /* 2) pH น้ำเชื่อมต่ำ = เสี่ยง inversion ในลูกท้ายที่ร้อน */
-  if(phs!=null&&phs<6.3){
-    P.push({sev:phs<6.0?'crit':'warn',t:'pH น้ำเชื่อมต่ำ — เสี่ยง inversion ระหว่างระเหย',
-      v:`pH ${fmtN(phs,2)} (เป้า 6.3–6.9)${phc!=null?` · pH น้ำอ้อยใส ${fmtN(phc,2)}`:''}`,
-      root:[`อาการ: น้ำเชื่อมออกมา pH ต่ำกว่าช่วงปลอดภัย`,
-        `ระหว่างระเหย pH จะดรอปเองตามธรรมชาติ ~0.3–0.5 จากน้ำอ้อยใส → ถ้าตั้งต้นชายขอบ ปลายทางจะหลุด`,
+  /* 2) pH ดรอประหว่างระเหยมากเกิน = เสี่ยง inversion ในลูกท้ายที่ร้อน */
+  if(kBad('B_PHDROP')){
+    P.push({sev:kSt('B_PHDROP'),t:'pH ดรอประหว่างระเหยผิดช่วง — เสี่ยง inversion',
+      v:`${kLine('B_PHDROP')}${phl!=null?` · pH หลังใส่ปูน ${fmtN(phl,2)}`:''}`,
+      root:[`อาการ: pH จากน้ำอ้อยใสถึงน้ำเชื่อม (CJ→SY) เปลี่ยนนอกช่วงที่คุมไว้`,
+        `ระหว่างระเหย pH ดรอปเองตามธรรมชาติ — ดรอปมากเกิน = สายร้อนนานหรือ pH ตั้งต้นชายขอบ`,
         `pH ต่ำ + อุณหภูมิสูง + เวลา = inversion (สูญ sucrose ถาวร ไปโผล่เป็น undetermined loss)`,
-        `RCA: คุม pH clarified ที่ตั้งต้นต่ำเกิน หรือ liming แกว่ง (ปั๊มปูน/probe)`],
-      fix:[`ยก pH clarified ไปชายบน (7.2–7.4) เพื่อเผื่อดรอป`,`สอบเทียบ pH probe + ตรวจปั๊มปูนจ่ายนิ่งไหม`],
+        `RCA: คุม pH ตั้งต้นหลังใส่ปูนต่ำเกิน หรือ liming แกว่ง (ปั๊มปูน/probe)`],
+      fix:[`ยก pH ตั้งต้นไปชายบนของช่วงเป้า เพื่อเผื่อดรอประหว่างระเหย`,`สอบเทียบ pH probe + ตรวจปั๊มปูนจ่ายนิ่งไหม`],
       next:[`วัด RS (reducing sugars) ใน syrup เทียบ CJ — ถ้าเพิ่มชัด แปลว่า inversion เกิดจริงระหว่างต้ม`]});
   }
   /* 3) Pol กากตะกอนเกิน — น้ำตาลถูกทิ้งไปกับโคลน */
-  if(fcp!=null&&fcp>1.26){
-    P.push({sev:fcp>2.5?'crit':'warn',t:'น้ำตาลค้างในกากตะกอนสูง',
-      v:`${fmtN(fcp,2)}% (เป้า <1.26) = ${(fcp/1.26).toFixed(1)} เท่าของเป้า`,
+  if(kBad('B_FCP')){
+    const tg=findKpi('B_FCP').tg;
+    P.push({sev:kSt('B_FCP'),t:'น้ำตาลค้างในกากตะกอนสูง',
+      v:`${kLine('B_FCP')}${fcp&&tg?` = ${(fcp/tg).toFixed(1)} เท่าของเป้า`:''}`,
       root:[`อาการ: Pol ติดออกไปกับกากตะกอนมากผิดปกติ`,
         `กลไก: ล้างเค้กไม่ทั่ว/สุญญากาศตก/เค้กหนาหรือแน่นเกิน (bagacillo ไม่พอ)`,
         `RCA: มักเป็นสุญญากาศ RVF ตก หรือหัวฉีดน้ำล้างอุดตันบางหัว`],
       fix:[`วัดสุญญากาศ RVF low/high zone`,`ไล่หัวฉีดน้ำล้างทีละหัว`,`ปรับ bagacillo ให้เค้กโปร่งพอให้น้ำล้างซึม`],
       next:[`เก็บ Pol %cake แยกรายเครื่อง 3 วัน — เครื่องเดียวโดด = ซ่อมเครื่องนั้น`]});
   }
-  /* 4) pH ทำใสหลุดช่วง */
-  if(phc!=null&&(phc<6.8||phc>7.4)){
-    const lowSide=phc<6.8;
-    P.push({sev:(phc<6.5||phc>8.0)?'crit':'warn',t:`pH น้ำอ้อยใส${lowSide?'ต่ำ':'สูง'}กว่าช่วงเป้า`,
-      v:`pH ${fmtN(phc,2)} (เป้า 6.8–7.4)${phl!=null?` · lime juice ${fmtN(phl,2)}`:''}`,
-      root:[`อาการ: pH หลังทำใสหลุดช่วง`,
+  /* 4) pH หลังใส่ปูนหลุดช่วง — ตัวตั้งต้นของทั้งสาย */
+  if(kBad('B_PHL')){
+    const b=findKpi('B_PHL').band, lowSide=phl!=null&&b&&phl<b[0];
+    P.push({sev:kSt('B_PHL'),t:`pH หลังใส่ปูน${lowSide?'ต่ำ':'สูง'}กว่าช่วงเป้า`,
+      v:kLine('B_PHL'),
+      root:[`อาการ: pH หลังใส่ปูนหลุดช่วงควบคุม`,
         lowSide?`ฝั่งต่ำ = เสี่ยง inversion ตลอดสายหลังจากนี้ (ร้อนขึ้นเรื่อย ๆ)`:`ฝั่งสูง = สีเข้ม + Ca²⁺ ค้าง → ตะกรันหม้อต้มเร็วขึ้น (Rein Ch.8)`,
         `RCA: ระบบจ่ายปูน (ความเข้ม Baumé แกว่ง/ปั๊มไม่นิ่ง) หรือ probe เพี้ยน`],
       fix:[`สอบเทียบ probe คู่กับแล็บทันที`,`คุมน้ำปูน 7–8 °Bé และตรวจ flow ปั๊มจ่าย`],
-      next:[`พล็อต pH clar รายกะ 1 สัปดาห์ ดูแกว่งตามกะไหม (คน) หรือดริฟท์ (เครื่องมือ)`]});
+      next:[`พล็อต pH รายกะ 1 สัปดาห์ ดูแกว่งตามกะไหม (คน) หรือดริฟท์ (เครื่องมือ)`]});
   }
-  /* 5) ค่าที่กรอกมือ */
-  if(turb!=null&&turb>9.95){
-    P.push({sev:turb>20?'crit':'warn',t:'ความขุ่นน้ำอ้อยใสเกินเป้า',
-      v:`${fmtN(turb,2)} NTU (เป้า ≤9.95)`,
+  /* 5) ความขุ่นน้ำอ้อยใส */
+  if(kBad('B_TURB')){
+    P.push({sev:kSt('B_TURB'),t:'ความขุ่นน้ำอ้อยใสเกินเป้า',
+      v:kLine('B_TURB'),
       root:[`อาการ: น้ำอ้อยใสยังขุ่น`,`มลทินที่หลุดไปจะกลายเป็นสี/ตะกรันปลายทาง และเข้าไปอยู่ในน้ำตาล`,
         `RCA: flocculant (โดส/คุณภาพ/การเตรียม) หรืออุณหภูมิเข้า clarifier ไม่ถึง 102–105°C ทำ flash ไม่สมบูรณ์`],
       fix:[`เช็คอุณหภูมิก่อน flash tank ให้ถึง 102–105°C`,`ทวนการเตรียม flocculant (<0.5%, บ่ม ~2 ชม., ปั๊ม progressive cavity เท่านั้น — Rein Ch.9)`],
       next:[`jar test เทียบโดส 2–5 ppm หา optimum ปัจจุบัน (อ้อยเปลี่ยน โดสเปลี่ยน)`]});
   }
-  if(prise!=null&&prise<0.5){
-    P.push({sev:'warn',t:'Purity Rise หลังทำใสต่ำ',
-      v:`${fmtN(prise,2)} จุด (ควร ≥0.5 · ดี 1–2)`,
+  if(kBad('B_PRISE')){
+    P.push({sev:kSt('B_PRISE'),t:'Purity Rise หลังทำใสหลุดเป้า',
+      v:kLine('B_PRISE'),
       root:[`อาการ: ทำใสแล้ว purity แทบไม่ขยับ = ดึง non-sucrose ออกได้น้อย`,
         `non-sucrose ที่หลุดไปจะไปสิ้นสุดที่โมลาส พาน้ำตาลไปด้วย ~1.5 เท่าของน้ำหนักตัวเอง`,
         `RCA: P₂O₅ ในน้ำอ้อยไม่พอ (<300 ppm) ทำให้ตะกอน Ca-phosphate เกิดน้อย`],
       fix:[`วัด P₂O₅ ใน MJ ถ้าต่ำ เติม H₃PO₄ 200–400 ppm (Rein Ch.8)`],
       next:[`เทียบ purity rise ระหว่างอ้อยสด/ไฟไหม้ — ไฟไหม้มักต่ำกว่า`]});
   }
+  fillGaps(P,'boil');
   P.sort((a,b)=>(a.sev==='crit'?0:1)-(b.sev==='crit'?0:1));
   return {all:P};
 }

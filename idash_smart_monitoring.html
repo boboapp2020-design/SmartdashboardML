@@ -3832,29 +3832,46 @@ function liveStamp(txt){const el=document.getElementById('liveStamp');if(el)el.i
 /* Apps Script /exec ตอบ 302 ไป googleusercontent พร้อม token ครั้งเดียว — บางครั้ง token
    หมดอายุ/cold start ทำให้ได้ 404 เป็นหน้า HTML แบบสุ่ม โดยครั้งถัดไปมักสำเร็จทันที
    จึงต้อง retry หลายรอบ พร้อม cache-bust กัน browser cache เสิร์ฟ response 404 เก่า */
-/* ดึงข้อมูลพร้อม timeout ต่อครั้ง — สำคัญมากตอนเปิดจาก GitHub Pages
-   fetch ปกติไม่มี timeout: ถ้า Apps Script ค้าง (cold start/redirect) จะรอค้างไม่จบ
-   ใส่ AbortController ตัดที่ 13 วิ แล้ว retry ใหม่ (ครั้งถัดไปมักโดน instance ที่อุ่นแล้ว เร็วขึ้น) */
-async function fetchLive(tries){
-  let lastErr=''; const T=tries||4;
-  for(let i=0;i<T;i++){
-    const url=liveUrl()+(liveUrl().includes('?')?'&':'?')+'cb='+Date.now();
-    /* 22 วิ: วัดจริงแล้ว endpoint ตอบ 5–16 วิ (redirect ของ Google กิน ~4 วิเอง) — สั้นกว่านี้จะตัดตัวที่กำลังจะสำเร็จทิ้ง */
-    const ac=new AbortController(), to=setTimeout(()=>ac.abort(),22000);
-    try{
-      const res=await fetch(url,{method:'GET',signal:ac.signal,redirect:'follow',cache:'no-store'});
+/* ⚡ ดึงข้อมูลแบบ "ยิงขนานแข่งกัน" — วัดจริง: endpoint ตอบ 5–16 วิ และสุ่มตอบ 404
+   ความช้าเดิมมาจากการรอทีละเส้น (เจอเส้นช้า/404 ต้องรอจบก่อนถึงลองใหม่)
+   วิธีใหม่: ยิง 2 request พร้อมกัน (cb ต่างกัน = คนละ instance) เอาตัวแรกที่ได้ JSON แล้วยกเลิกที่เหลือ
+   โอกาสเจอเส้นเร็วเพิ่มเป็นเท่าตัว · timeout 22 วิ/เส้น กันค้าง */
+function fetchOnce(tag){
+  const url=liveUrl()+(liveUrl().includes('?')?'&':'?')+'cb='+Date.now()+'_'+tag;
+  /* 45 วิ: ยิ่งฤดูเดินไป ชีตยิ่งโต (ล่าสุด ~400KB) สคริปต์ฝั่ง Google ใช้เวลาสร้าง payload นานขึ้นเรื่อย ๆ
+     วัดจริงรอบล่าสุด: สำเร็จที่ 21.6 วิ — 22 วิเดิมเฉือนทิ้งพอดี */
+  const ac=new AbortController(), to=setTimeout(()=>ac.abort(),45000);
+  const p=fetch(url,{method:'GET',signal:ac.signal,redirect:'follow',cache:'no-store'})
+    .then(async res=>{
       const txt=await res.text();
       if(res.ok&&txt.trim()[0]==='{'){
         const j=JSON.parse(txt);
         if(j.error)throw new Error(j.error);
         return j;
       }
-      lastErr=res.ok?'ได้ข้อมูลไม่ใช่ JSON (redirect)':'HTTP '+res.status;
-    }catch(e){lastErr=e.name==='AbortError'?'หมดเวลา (ชีตตอบช้า)':e.message;}
-    finally{clearTimeout(to);}
-    if(i<T-1)await new Promise(r=>setTimeout(r,450));   // เว้นจังหวะสั้น ๆ ก่อนลองใหม่
+      throw new Error(res.ok?'ได้ข้อมูลไม่ใช่ JSON (redirect)':'HTTP '+res.status);
+    })
+    .finally(()=>clearTimeout(to));
+  p.abort=()=>ac.abort();
+  return p;
+}
+async function fetchLive(rounds){
+  let lastErr=''; const R=rounds?Math.ceil(rounds/2):2;   // 1 รอบ = 2 เส้นขนาน
+  for(let r=0;r<R;r++){
+    const a=fetchOnce(r+'a'), b=fetchOnce(r+'b');
+    try{
+      /* เอาตัวแรกที่ "สำเร็จ" — ถ้าเส้นหนึ่งพัง อีกเส้นยังวิ่งต่อ */
+      const j=await new Promise((resolve,reject)=>{
+        let fails=0;
+        const ok=v=>{resolve(v);try{a.abort();b.abort();}catch(e){}};
+        const bad=e=>{lastErr=e&&e.name==='AbortError'?'หมดเวลา (ชีตตอบช้า)':(e&&e.message||String(e));if(++fails===2)reject(new Error(lastErr));};
+        a.then(ok,bad); b.then(ok,bad);
+      });
+      return j;
+    }catch(e){lastErr=e.message;}
+    if(r<R-1)await new Promise(r2=>setTimeout(r2,350));
   }
-  throw new Error(lastErr+' (ลองแล้ว '+T+' ครั้ง)');
+  throw new Error(lastErr+' (ลองแล้ว '+(R*2)+' เส้น)');
 }
 async function liveFetch(manual){
   if(LIVE_BUSY){if(manual)toast('กำลังดึงข้อมูลอยู่ — รอสักครู่');return;}

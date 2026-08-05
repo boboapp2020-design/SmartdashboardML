@@ -4026,12 +4026,18 @@ loadState();
 pushBadge();
 flushPush(false);                 // มีอะไรค้างจากรอบก่อน ส่งต่อให้จบ
 setInterval(()=>{if(qRead().length)flushPush(false);},60000);   // ลองส่งซ้ำทุก 1 นาที
-/* วาดค่าที่ cache ไว้ก่อน แล้วค่อยยิงขอข้อมูลสดทับ — Apps Script ใช้เวลา ~5 วิ
-   ระหว่างรอจึงเห็นตัวเลขของเมื่อวานแทนที่จะเห็นจอว่าง และมีวันที่กำกับเสมอ */
+/* ⚡ cache-first: ข้อมูลชีตอัปเดตวันละครั้ง — ถ้าแคชยังสด (< 15 นาที) แสดงทันทีไม่ต้องรอเน็ตเลย
+   (Apps Script ตอบช้า 5–16 วิ) เปิดครั้งถัดไปจึง instant · กด Refresh เพื่อดึงสดได้เสมอ
+   แคชเก่า/ไม่มี = ยิงขอข้อมูลเบื้องหลัง โชว์ค่าที่เก็บไว้ระหว่างรอ */
+const CACHE_TTL=15*60*1000;
 const _cached=liveReadCache();
 refreshAll('overview');
-if(_cached)liveStamp(`<span class="gdot" style="background:var(--warn)"></span>ค่าที่เก็บไว้ (${LIVE_DATE}) · กำลังอัปเดต…`);
-liveFetch(false);
+if(_cached&&(Date.now()-_cached.at)<CACHE_TTL){
+  liveStamp(`<span class="gdot"></span>ข้อมูล <b>${LIVE_DATE}</b> · <span style="color:var(--muted)">จากแคช</span> <span style="color:var(--blue);cursor:pointer;text-decoration:underline" onclick="liveFetch(true)">อัปเดต</span>`);
+}else{
+  if(_cached)liveStamp(`<span class="gdot" style="background:var(--warn)"></span>ค่าที่เก็บไว้ (${LIVE_DATE}) · กำลังอัปเดต…`);
+  liveFetch(false);
+}
 /* นาฬิกาเวลาบันทึกอัตโนมัติ */
 (function tick(){
   syncStamp();

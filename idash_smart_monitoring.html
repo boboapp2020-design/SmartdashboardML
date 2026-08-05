@@ -3959,6 +3959,9 @@ function demoVal(k,mode,mag){
   const span=(k.max-k.min)||1, jit=(Math.random()-.5)*span*0.05;
   const m=(mag==null?Math.random():mag);
   let v;
+  /* ตัวติดตาม (สารเคมี/โหลดไอน้ำ) ไม่มีเป้าผ่าน/ไม่ผ่าน — สุ่มค่าใช้งานจริงช่วงกลางพิสัย */
+  if(k.track)return +Math.min(k.max,Math.max(k.min,
+      k.min+span*(0.45+Math.random()*0.3))).toFixed(k.dec);
   if(k.dir==='band'){
     const [lo,hi]=k.band,mid=(lo+hi)/2, hiSide=Math.random()<0.5;
     v = mode==='crit' ? (hiSide?k.wband[1]+span*(0.03+m*0.12):k.wband[0]-span*(0.03+m*0.12))
@@ -3975,6 +3978,19 @@ function demoVal(k,mode,mag){
   }
   return +Math.min(k.max,Math.max(k.min,v)).toFixed(k.dec);
 }
+/* จำนวนครั้งที่ต้องบันทึกต่อวัน — แปลจากความถี่ที่ระบุไว้ในตัวชี้วัดเอง (k.f)
+   ข้อมูลจำลองจะได้มีจำนวนบันทึกต่อวันเท่ากับที่หน้างานต้องเก็บจริง
+   เช่น "ทุก 2 ชม" = 12 ครั้ง/วัน · "ทุก 8 ชม" = 3 ครั้ง (ตรงกับ 3 กะ) · "ทุก 24 ชม" = 1 ครั้ง */
+function readsPerDay(f){
+  const s=String(f||'');
+  const m=s.match(/ทุก\s*([\d.]+)\s*ชม/);
+  if(m){const h=parseFloat(m[1]); return (h>0)?Math.max(1,Math.min(24,Math.round(24/h))):1;}
+  if(/เรียลไทม์/.test(s))return 12;      // เรียลไทม์: จำลองทุก 2 ชม. พอให้เห็นความถี่โดยไม่บวมเกิน
+  if(/strike/i.test(s))return 4;          // ครั้ง/Strike: ~4 strike ต่อวัน
+  return 1;                                // ครั้ง/วัน · 1 ครั้ง/วัน · ทุก 24 ชม
+}
+/* กะตามชั่วโมง: C 00–08 · A 08–16 · B 16–24 */
+const shiftOfHour=h=>h<8?'กะ C':h<16?'กะ A':'กะ B';
 /* สร้างลำดับสถานะรายวัน (null/'warn'/'crit') ตามรูปแบบแนวโน้ม — ให้ประวัติดูสมจริง ไม่ใช่สุ่มขาว
    sev = ระดับรุนแรงเป้าหมายของตัวนี้ · n = จำนวนวันเดินหีบ */
 function demoSeq(shape,sev,n){
@@ -4017,16 +4033,17 @@ function seedDemo(){
   for(const [key,s] of Object.entries(D)){
     if(key==='overview')continue;
     for(const k of s.kpis){
-      if(k.track)continue;                                   // ตัวติดตาม (สารเคมี/โหลด) ไม่ทำให้เป็นปัญหา
       if(k.lf&&LIVE_SLIM.kpis&&LIVE_SLIM.kpis[k.id])continue; // ดึงสดจริง ไม่แตะ
-      pool.push({key,k});
+      pool.push({key,k});                                     // ตัวติดตามก็จำลองด้วย จะได้มีข้อมูลให้ทดสอบ
     }
   }
+  /* แต่ตัวติดตาม (สารเคมี/โหลดไอน้ำ) ไม่ถูกเลือกให้เป็น "ปัญหา" เพราะไม่มีสเปกผ่าน/ไม่ผ่าน */
+  const problemPool=pool.filter(p=>!p.k.track);
   /* ระดับสุขภาพโรงงานของรอบนี้: บางครั้งเกือบปกติ บางครั้งวุ่นหลายจุด */
   const health=Math.random();
   const nCrit = health<0.2?rnd(3,5) : health<0.55?rnd(1,3) : rnd(0,1);
   const nWarn = health<0.2?rnd(4,7) : health<0.55?rnd(3,5) : rnd(1,3);
-  const shuffled=pool.slice().sort(()=>Math.random()-0.5);
+  const shuffled=problemPool.slice().sort(()=>Math.random()-0.5);
   const chosen=new Map();                                    // id → {sev, shape}
   const shapesCrit=['drift','chronic','drift','spike'];
   const shapesWarn=['drift','spike','endwarn','recover','endwarn'];
@@ -4034,24 +4051,40 @@ function seedDemo(){
   shuffled.slice(nCrit,nCrit+nWarn).forEach(p=>chosen.set(p.k.id,{sev:'warn',shape:shapesWarn[rnd(0,shapesWarn.length-1)]}));
   DEMO_LAST={nCrit,nWarn,health:health<0.2?'วุ่นหลายจุด':health<0.55?'มีปัญหาบ้าง':'เกือบปกติ'};
 
+  let nRec=0;
   for(const {key,k} of pool){
     const realLog=(k.log||[]).filter(r=>r.by!==DEMO_BY);
     const plan=chosen.get(k.id);
     /* ลำดับสถานะรายวัน: ตัวที่ถูกเลือกใช้รูปแบบแนวโน้ม · ที่เหลือปกติ + เฝ้าระวังประปราย ~8% */
     const seq=plan?demoSeq(plan.shape,plan.sev,N)
                   :Array.from({length:N},()=>Math.random()<0.08?'warn':null);
-    k.hist=seq.map(mode=>demoVal(k,mode));
-    k.days=[...days];
-    k.log=idxs.map((i,j)=>({v:k.hist[j],date:LIVE_SLIM.dates[i],shift:shifts[j%3],
-      by:DEMO_BY,time:'08:00',iso:''}));
+    /* บันทึกตามความถี่จริงของตัวชี้วัด — หลายครั้งต่อวันตาม k.f
+       กราฟใช้ค่าเฉลี่ยรายวัน (1 จุด/วัน) · ประวัติเก็บครบทุกครั้งพร้อมเวลา+กะที่ถูกต้อง */
+    const per=readsPerDay(k.f);
+    k.hist=[];k.days=[];k.log=[];
+    seq.forEach((mode,j)=>{
+      const dateFull=LIVE_SLIM.dates[idxs[j]];
+      let sum=0;
+      for(let r=0;r<per;r++){
+        const v=demoVal(k,mode);
+        const hh=Math.round(r*24/per)%24;
+        sum+=v;
+        k.log.push({v,date:dateFull,shift:shiftOfHour(hh),by:DEMO_BY,
+                    time:String(hh).padStart(2,'0')+':00',iso:''});
+        nRec++;
+      }
+      k.hist.push(+(sum/per).toFixed(k.dec));   // ค่ารายวันสำหรับกราฟ = เฉลี่ยของวันนั้น
+      k.days.push(days[j]);
+    });
     /* ต่อท้ายของจริงกลับเข้าไป ให้ทั้งกราฟและประวัติยังเห็น */
     realLog.forEach(r=>{k.hist.push(r.v);k.days.push(String(r.date).slice(0,5));k.log.push(r);});
-    k.log=k.log.slice(-260);
+    k.log=k.log.slice(-600);                    // เก็บล่าสุดพอสำหรับดูประวัติ ไม่ให้ localStorage บวม
     k.v=k.hist[k.hist.length-1];
   }
+  DEMO_LAST.records=nRec;
   ASOF=`ชุดข้อมูลตัวอย่างทั้งฤดู · ${LIVE_SLIM.dates[idxs[0]]} – ${LIVE_SLIM.dates[idxs[idxs.length-1]]}`;
   refreshAll(current());saveState();
-  toast(`▶ สุ่มสถานการณ์ใหม่: "${DEMO_LAST.health}" · ${days.length} วันเดินหีบ · พบ ${ALERTS.length} จุดหลุดเป้า (กดซ้ำเพื่อสุ่มแบบอื่น)`);
+  toast(`▶ สุ่มใหม่: "${DEMO_LAST.health}" · ${days.length} วันเดินหีบ · ${DEMO_LAST.records.toLocaleString('th-TH')} บันทึก (ตามความถี่จริง) · พบ ${ALERTS.length} จุดหลุดเป้า`);
 }
 /* ลบเฉพาะข้อมูลจำลอง (ดูจากป้าย by ในประวัติ) — ค่าที่ staff กรอกจริงสร้างกลับคืนจาก log */
 function clearDemo(){

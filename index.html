@@ -3832,23 +3832,29 @@ function liveStamp(txt){const el=document.getElementById('liveStamp');if(el)el.i
 /* Apps Script /exec ตอบ 302 ไป googleusercontent พร้อม token ครั้งเดียว — บางครั้ง token
    หมดอายุ/cold start ทำให้ได้ 404 เป็นหน้า HTML แบบสุ่ม โดยครั้งถัดไปมักสำเร็จทันที
    จึงต้อง retry หลายรอบ พร้อม cache-bust กัน browser cache เสิร์ฟ response 404 เก่า */
+/* ดึงข้อมูลพร้อม timeout ต่อครั้ง — สำคัญมากตอนเปิดจาก GitHub Pages
+   fetch ปกติไม่มี timeout: ถ้า Apps Script ค้าง (cold start/redirect) จะรอค้างไม่จบ
+   ใส่ AbortController ตัดที่ 13 วิ แล้ว retry ใหม่ (ครั้งถัดไปมักโดน instance ที่อุ่นแล้ว เร็วขึ้น) */
 async function fetchLive(tries){
-  let lastErr='';
-  for(let i=0;i<(tries||4);i++){
+  let lastErr=''; const T=tries||4;
+  for(let i=0;i<T;i++){
     const url=liveUrl()+(liveUrl().includes('?')?'&':'?')+'cb='+Date.now();
+    /* 22 วิ: วัดจริงแล้ว endpoint ตอบ 5–16 วิ (redirect ของ Google กิน ~4 วิเอง) — สั้นกว่านี้จะตัดตัวที่กำลังจะสำเร็จทิ้ง */
+    const ac=new AbortController(), to=setTimeout(()=>ac.abort(),22000);
     try{
-      const res=await fetch(url,{method:'GET'});
+      const res=await fetch(url,{method:'GET',signal:ac.signal,redirect:'follow',cache:'no-store'});
       const txt=await res.text();
       if(res.ok&&txt.trim()[0]==='{'){
         const j=JSON.parse(txt);
         if(j.error)throw new Error(j.error);
         return j;
       }
-      lastErr=res.ok?'ได้ข้อมูลไม่ใช่ JSON (น่าจะ redirect ผิด)':'HTTP '+res.status;
-    }catch(e){lastErr=e.message;}
-    if(i<(tries||4)-1)await new Promise(r=>setTimeout(r,800));   // เว้นจังหวะก่อนลองใหม่
+      lastErr=res.ok?'ได้ข้อมูลไม่ใช่ JSON (redirect)':'HTTP '+res.status;
+    }catch(e){lastErr=e.name==='AbortError'?'หมดเวลา (ชีตตอบช้า)':e.message;}
+    finally{clearTimeout(to);}
+    if(i<T-1)await new Promise(r=>setTimeout(r,450));   // เว้นจังหวะสั้น ๆ ก่อนลองใหม่
   }
-  throw new Error(lastErr+' (ลองแล้ว '+(tries||4)+' ครั้ง)');
+  throw new Error(lastErr+' (ลองแล้ว '+T+' ครั้ง)');
 }
 async function liveFetch(manual){
   if(LIVE_BUSY){if(manual)toast('กำลังดึงข้อมูลอยู่ — รอสักครู่');return;}
